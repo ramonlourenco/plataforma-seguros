@@ -1,218 +1,96 @@
-# PlataformaSeguros
+# PlataformaSeguros 🚀
 
-Plataforma de Seguros - Solução .NET 8 com arquitetura Hexagonal para dois microserviços:
+Solução robusta desenvolvida em **.NET 8** utilizando **Arquitetura Hexagonal (Ports & Adapters)** para gestão de seguros, composta por dois microserviços resilientes:
 
-- `PropostaService`: CRUD de propostas com status `EmAnalise`, `Aprovada`, `Rejeitada`.
-- `ContratacaoService`: efetua contratação apenas se a proposta estiver `Aprovada`.
+*   **`PropostaService`**: Gerencia o ciclo de vida de propostas (Em Análise, Aprovada, Rejeitada).
+*   **`ContratacaoService`**: Orquestra a formalização de contratos, integrando-se via HTTP (Refit) para validar o status da proposta antes da conclusão.
 
-## Estrutura
+## 🏗️ Visão da Arquitetura
 
-```
+O projeto utiliza princípios de **Clean Architecture** e **Observabilidade**, garantindo rastreabilidade entre serviços através de `Correlation IDs` injetados em todos os logs.
+
+### Estrutura de Pastas
+```text
 PlataformaSeguros/
-├── Contratacao.Api/
-│   ├── Controllers/
-│   ├── Middleware/
-│   ├── Program.cs
-│   └── Dockerfile
-├── Contratacao.Application/
-│   └── UseCases/
-├── Contratacao.Domain/
-│   ├── Entities/
-│   ├── Ports/
-│   └── ValueObjects/
-├── Contratacao.Infrastructure/
-│   ├── Clients/
-│   └── Repositories/
-├── Contratacao.Tests/
-├── Proposta.Api/
-│   ├── Controllers/
-│   ├── Middleware/
-│   ├── Migrations/
-│   ├── Program.cs
-│   └── Dockerfile
-├── Proposta.Application/
-│   └── UseCases/
-├── Proposta.Domain/
-│   ├── Entities/
-│   ├── Enums/
-│   └── Ports/
-├── Proposta.Infrastructure/
-│   ├── Migrations/
-│   └── Repositories/
-├── Proposta.Tests/
-├── docker-compose.yml
-├── docker-compose.db.yml
-└── README.md
+├── Contratacao.Api/           # Primary Adapters (Controllers/Middlewares)
+├── Contratacao.Application/   # Core Logic (Use Cases)
+├── Contratacao.Domain/        # Domain Core (Entities/Ports/Value Objects)
+├── Contratacao.Infrastructure/# Secondary Adapters (Repositories/Refit Clients)
+└── Proposta.*                 # Estrutura espelhada para o serviço de Propostas
 ```
 
-- `*.Api`: camadas API/Controllers.
-- `*.Application`: casos de uso e regras de aplicação.
-- `*.Domain`: entidades e portas (interfaces).
-- `*.Infrastructure`: adapters, repositório e cliente HTTP.
-- `*.Tests`: testes unitários xUnit + Moq.
+## 🔄 Fluxo de Contratação
 
-## Como rodar
+O diagrama abaixo detalha a interação entre os serviços e a validação de regra de negócio:
 
-### Full Stack
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Usuário/Swagger
+    participant C as Contratacao.Api
+    participant P as Proposta.Api
+    participant DB as PostgreSQL
+
+    U->>C: POST /api/contratacao { propostaId }
+    C->>P: GET /api/proposta/{id} (via Refit)
+    P->>DB: Consultar Proposta
+    DB-->>P: Retorna Dados da Proposta
+    P-->>C: PropostaResponse (Status: Aprovada/Rejeitada)
+
+    alt Status == "Aprovada"
+        C->>C: Executa ContratarPropostaUseCase
+        C-->>U: 200 OK (Contrato Criado)
+    else Status != "Aprovada"
+        C-->>U: 400 BadRequest (Proposta não aprovada)
+    end
+```
+
+## 🛠️ Como Executar
+
+### Pré-requisitos
+- Docker Desktop
+- SDK do .NET 8 (opcional, para execução via CLI)
+
+### Subir Ambiente (Full Stack)
+O ambiente utiliza Resiliência de Inicialização. As APIs aguardam o PostgreSQL estar pronto através de uma política de retry antes de finalizar o startup.
+
 ```bash
 docker-compose up -d --build
 ```
 
-### Apenas Banco (Debug VS)
-```bash
-docker-compose -f docker-compose.db.yml up -d
-```
+### Endereços de Acesso
 
-### Reset Ambiente
-```bash
-docker-compose down -v
-```
+| Serviço | URL | Descrição |
+|--------|-----|----------|
+| Swagger Proposta | http://localhost:5001/swagger | Documentação das Propostas |
+| Swagger Contratação | http://localhost:5003/swagger | Documentação das Contratações |
+| Health Check | /health | Verificação de integridade do serviço |
 
-O `PropostaService` aplica migrações automaticamente ao iniciar e cria o banco PostgreSQL.
+## 🛡️ Resiliência e Observabilidade
 
-### Rodar via Visual Studio Community
+- **Auto-Migration**: O sistema aplica automaticamente as migrations do Entity Framework ao iniciar.
+- **Connection Retry**: Implementado loop de 5 tentativas com intervalo de 3s no Program.cs para suportar o tempo de boot do PostgreSQL no Docker.
+- **Correlation ID**: Todas as requisições geram um ID único que flui entre os microserviços, permitindo rastrear uma falha pontual em todo o ecossistema.
+- **Logs Estruturados**: Configuração com Serilog para saída em console facilitando o monitoramento via container.
 
-1. Abra `PlataformaSeguros.sln` no Visual Studio.
-2. Clique com o botão direito na solução e selecione `Set Startup Projects...`.
-3. Escolha `Multiple startup projects`.
-4. Configure `Proposta.Api` e `Contratacao.Api` como `Start`.
-5. Inicie o debug com F5.
+## 🧪 Qualidade e Suporte
 
-### Rodar via VS Code
-
-Você pode usar o comando:
-
-```bash
-dotnet run --project Proposta.Api
-```
-
-e em outro terminal:
-
-```bash
-dotnet run --project Contratacao.Api
-```
-
-Se desejar usar um arquivo de lançamento, configure um `launch.json` para os dois projetos.
-
-### Endereços locais
-
-| Serviço | URL |
-|---|---|
-| Proposta API (HTTP) | http://localhost:5001/swagger |
-| Contratação API (HTTP) | http://localhost:5003/swagger |
-| PostgreSQL (Docker) | localhost:5432 |
-
-
-### Testes unitários
-
-Para executar os testes do projeto:
+### Executar Testes Unitários
+Testes de lógica de domínio e casos de uso utilizando Moq e xUnit.
 
 ```bash
 dotnet test
 ```
 
-### Fluxo de Validação: ContratacaoController
+### Troubleshooting
 
-O `ContratacaoController` valida o status da proposta antes de concluir a contratação através do seguinte fluxo:
+**Reset Total do Ambiente**: Se houver erro de persistência ou volume corrompido:
 
-1. **HTTP POST** em `/api/contratacao` com o `PropostaId`
-2. **ContratacaoUseCase** consome `IPropostaServiceClient` para buscar a proposta no `PropostaService`
-3. **Validação**: Se `Status == "Aprovada"`, cria um `ContratacaoEntity` e retorna `200 OK`
-4. **Rejeição**: Se Status != "Aprovada" ou a proposta não existe, retorna `400 BadRequest`
-
-```csharp
-public async Task<IActionResult> Contract([FromBody] ContratacaoRequest request)
-{
-    var result = await _useCase.ExecuteAsync(request.PropostaId);
-    return result is null 
-        ? BadRequest(new { Message = "Proposta não aprovada ou não encontrada." }) 
-        : Ok(result);
-}
+```bash
+docker-compose down -v
 ```
 
-### Mockando `ContratacaoController` e `ContratacaoUseCase`
-
-O `ContratacaoController` depende do `ContratacaoUseCase`, que por sua vez consome `IPropostaServiceClient`.
-
-#### Exemplo com Moq
-
-```csharp
-var proposta = new PropostaResponse
-{
-    Id = Guid.NewGuid(),
-    ClienteNome = "Teste",
-    Valor = 1000m,
-    Status = "Aprovada"
-};
-
-var propostaClientMock = new Mock<IPropostaServiceClient>();
-propostaClientMock
-    .Setup(x => x.GetPropostaByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-    .ReturnsAsync(proposta);
-
-var useCase = new ContratacaoUseCase(propostaClientMock.Object);
-var result = await useCase.ExecuteAsync(proposta.Id);
-
-Assert.NotNull(result);
+**Visualizar logs em tempo real**:
+```bash
+docker logs -f plataforma-seguros-proposta
 ```
-
-#### Exemplo com NSubstitute
-
-```csharp
-var proposta = new PropostaResponse
-{
-    Id = Guid.NewGuid(),
-    ClienteNome = "Teste",
-    Valor = 1000m,
-    Status = "Aprovada"
-};
-
-var propostaClient = Substitute.For<IPropostaServiceClient>();
-propostaClient.GetPropostaByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-    .Returns(proposta);
-
-var useCase = new ContratacaoUseCase(propostaClient);
-var result = await useCase.ExecuteAsync(proposta.Id);
-
-Assert.NotNull(result);
-```
-
-### Observações
-
-- O `ContratacaoUseCase` somente retorna sucesso quando a `Status` da proposta é `Aprovada`.
-- Se a proposta não for encontrada ou não estiver aprovada, a contratação retorna `BadRequest`.
-
-## Troubleshooting
-
-- `docker-compose up -d --build`: Reconstrói imagens e sobe em segundo plano (sem bloquear o prompt).
-- `docker-compose down -v`: Reseta o ambiente e remove volumes do banco de dados.
-
-## Troubleshooting
-
-- `docker-compose up -d --build`: Reconstrói imagens e sobe em segundo plano (sem bloquear o prompt).
-- `docker-compose down -v`: Reseta o ambiente e remove volumes do banco de dados.
-
-### URLs
-
-- Contratação: http://localhost:5003/swagger
-- Proposta: http://localhost:5001/swagger
-
-## Próximos passos
-
-- Adicionar testes de integração para o fluxo entre `ContratacaoService` e `PropostaService`.
-- Validar a criação de propostas e contratos com o banco PostgreSQL.
-
-```mermaid
-%%{init: {'theme':'dark'}}%%
-sequenceDiagram
-    participant Client
-    participant Gateway
-    participant Contratacao
-    participant Proposta
-
-    Client->>Gateway: Request
-    Gateway->>Contratacao: Forward + Correlation ID
-    Contratacao->>Proposta: HTTP (Refit)
-    Proposta-->>Contratacao: Response
-    Contratacao-->>Gateway: Response
-    Gateway-->>Client: Response
