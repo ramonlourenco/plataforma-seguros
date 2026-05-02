@@ -201,3 +201,19 @@ Assert.NotNull(result);
 
 - Adicionar testes de integração para o fluxo entre `ContratacaoService` e `PropostaService`.
 - Validar a criação de propostas e contratos com o banco PostgreSQL.
+
+
+graph TD
+    User((Usuário/Client)) -->|POST /proposta| P_API[Proposta.Api]
+    P_API -->|Salva| DB[(PostgreSQL)]
+    
+    User -->|POST /contratacao| C_API[Contratacao.Api]
+    C_API -->|GET /proposta/{id}| P_API
+    
+    subgraph "Observabilidade"
+        S[Serilog]
+        CID[Correlation ID]
+    end
+    
+    C_API -.->|Log com TraceID| S
+    P_API -.->|Log com TraceID| S
