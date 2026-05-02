@@ -55,3 +55,38 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# .gitignore para .NET + VS Code + Docker
+
+# --- dotnet artifacts ---
+**/bin/
+**/obj/
+**/publish/
+
+# --- Database & Migrations ---
+# Ignora arquivos de logs ou backups do Postgres se estiverem no repo
+*.log
+*.bak
+
+# --- User-specific files (VS Code & Visual Studio) ---
+.vs/
+.vscode/
+*.user
+*.userosscache
+*.sln.docstates
+
+# --- Docker ---
+.dockerignore
+# Se você salvar o volume do banco localmente na pasta do projeto:
+/pgdata/
+
+# --- Secrets & Config (Muito importante!) ---
+# Ignora arquivos que podem conter senhas ou chaves de API
+appsettings.Development.json
+*.pfx
+*.certificate
+*.secret
+
+# --- Operating System ---
+.DS_Store
+Thumbs.db
