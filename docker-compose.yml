@@ -1,0 +1,55 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    container_name: plataforma-seguros-db
+    environment:
+      POSTGRES_DB: db_plataforma_seguros
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_plataforma_seguros_data:/var/lib/postgresql/data
+    networks:
+      - plataforma-seguros-net
+
+  proposta-service:
+    build:
+      context: .
+      dockerfile: ./Proposta.Api/Dockerfile
+      args:
+        DOTNET_RESTORE_NO_CACHE: "true"
+    ports:
+      - "5001:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+    depends_on:
+      - postgres
+    networks:
+      - plataforma-seguros-net
+
+  contratacao-service:
+    build:
+      context: .
+      dockerfile: ./Contratacao.Api/Dockerfile
+      args:
+        DOTNET_RESTORE_NO_CACHE: "true"
+    ports:
+      - "5003:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - PropostaService__BaseUrl=http://proposta-service:80
+      - ASPNETCORE_URLS=http://+:80
+    depends_on:
+      - proposta-service
+    networks:
+      - plataforma-seguros-net
+
+volumes:
+  db_plataforma_seguros_data:
+
+networks:
+  plataforma-seguros-net:
+    driver: bridge
