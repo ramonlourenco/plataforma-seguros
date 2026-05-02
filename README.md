@@ -5,6 +5,13 @@ Solução robusta desenvolvida em **.NET 8** utilizando **Arquitetura Hexagonal 
 *   **`PropostaService`**: Gerencia o ciclo de vida de propostas (Em Análise, Aprovada, Rejeitada).
 *   **`ContratacaoService`**: Orquestra a formalização de contratos, integrando-se via HTTP (Refit) para validar o status da proposta antes da conclusão.
 
+<!-- Seção do Diagrama Técnico -->
+<div align="center">
+  <img src="./imagens/diagrama_arquitetura.png" alt="Diagrama de Arquitetura Técnica" width="100%" max-width="900px">
+  <p><i>Arquitetura de Solução: Foco em Resiliência e Observabilidade</i></p>
+</div>
+
+---
 ## 🏗️ Visão da Arquitetura
 
 O projeto utiliza princípios de **Clean Architecture** e **Observabilidade**, garantindo rastreabilidade entre serviços através de `Correlation IDs` injetados em todos os logs.
