@@ -13,6 +13,7 @@ using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configuração do Serilog
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services)
@@ -26,7 +27,7 @@ builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-// 2. Configuração de CORS (Essencial para o Swagger não dar "Failed to Fetch")
+// 2. Configuração de CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -39,16 +40,13 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
 builder.Services.AddHttpContextAccessor();
 
-// 3. Configuração do Refit (Comunicação entre Microserviços)
-// Se estiver no VS, o Proposta.Api geralmente roda em http://localhost:5001
+// 3. Configuração do Refit
 var propostaBaseUrl = builder.Configuration["PropostaService:BaseUrl"]
     ?? builder.Configuration["PropostaService__BaseUrl"]
-    ?? "http://localhost:5001"; // Fallback para debug local no VS
+    ?? "http://localhost:5001";
 
-// Substitua o trecho do builder.Services.AddRefitClient por este:
 builder.Services.AddTransient<CorrelationIdDelegatingHandler>();
 
 builder.Services.AddRefitClient<IPropostaServiceApi>()
@@ -56,11 +54,10 @@ builder.Services.AddRefitClient<IPropostaServiceApi>()
     .ConfigureHttpClient(c => c.BaseAddress = new Uri(propostaBaseUrl))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
-        // Força a aceitação de qualquer certificado para evitar o erro de SSL
         ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
     });
 
-// 4. Connection String (Prioriza appsettings, senão usa localhost para debug)
+// 4. Connection String
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Port=5432;Database=db_plataforma_seguros;Username=postgres;Password=postgres";
 
@@ -74,29 +71,42 @@ builder.Services.AddScoped<ContratarPropostaUseCase>();
 
 var app = builder.Build();
 
-// 6. Auto-Migration no Startup
+// 6. Auto-Migration no Startup com Lógica de Retry (TENTATIVAS)
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
-    try
+    var dbContext = services.GetRequiredService<ContratacaoDbContext>();
+    var logger = services.GetRequiredService<ILogger<Program>>();
+
+    int maxRetries = 5;
+    int delay = 3000; // 3 segundos entre tentativas
+
+    for (int i = 1; i <= maxRetries; i++)
     {
-        var dbContext = services.GetRequiredService<ContratacaoDbContext>();
-        Log.Information("Aplicando migrations no PostgreSQL...");
-        dbContext.Database.Migrate();
-        Log.Information("Banco de dados sincronizado.");
-    }
-    catch (Exception ex)
-    {
-        Log.Fatal(ex, "Falha crítica ao iniciar o banco de dados");
-        throw;
+        try
+        {
+            logger.LogInformation("Tentativa {Tentativa}/{Max} de aplicar migrations no PostgreSQL...", i, maxRetries);
+            dbContext.Database.Migrate();
+            logger.LogInformation("Banco de dados sincronizado com sucesso!");
+            break;
+        }
+        catch (Exception ex)
+        {
+            if (i == maxRetries)
+            {
+                logger.LogCritical(ex, "Falha crítica após {Max} tentativas. O banco de dados não respondeu.", maxRetries);
+                throw;
+            }
+
+            logger.LogWarning("Banco de dados ainda não está pronto. Nova tentativa em {Delay}ms...", delay);
+            Thread.Sleep(delay);
+        }
     }
 }
 
 // 7. Middleware e Pipeline
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-
-// Habilita o CORS
 app.UseCors("AllowAll");
 
 if (app.Environment.IsDevelopment())
@@ -105,13 +115,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// COMENTADO para evitar problemas de SSL local no Windows
-// app.UseHttpsRedirection(); 
-
 app.UseAuthorization();
 app.MapControllers();
-
-// Health check endpoint
 app.MapGet("/health", () => Results.Ok("Healthy"));
 
 app.Run();

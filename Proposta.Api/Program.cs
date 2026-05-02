@@ -10,6 +10,7 @@ using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configuração do Serilog
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services)
@@ -23,7 +24,7 @@ builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-// 2. Configuração de CORS (Essencial para evitar o "Failed to Fetch" no Swagger)
+// 2. Configuração de CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -36,17 +37,16 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
 builder.Services.AddHttpContextAccessor();
 
-// 3. Connection String (Prioriza appsettings, senão usa localhost para debug)
+// 3. Connection String (Prioriza variáveis do Docker-Compose)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Port=5432;Database=db_plataforma_seguros;Username=postgres;Password=postgres";
 
 builder.Services.AddDbContext<PropostaDbContext>(options =>
     options.UseNpgsql(connectionString, npgsqlOptions => npgsqlOptions.MigrationsAssembly("Proposta.Infrastructure")));
 
-// 4. Injeção de Dependência (Arquitetura Hexagonal)
+// 4. Injeção de Dependência
 builder.Services.AddScoped<IPropostaRepository, PropostaRepository>();
 builder.Services.AddScoped<PropostaUseCases>();
 
@@ -55,8 +55,6 @@ var app = builder.Build();
 // 5. Pipeline de Middlewares
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-
-// Habilita o CORS antes de outros middlewares de rota
 app.UseCors("AllowAll");
 
 if (app.Environment.IsDevelopment())
@@ -65,31 +63,41 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// 6. Migrations Automáticas ao Iniciar
+// 6. Migrations Automáticas com Retry (Lógica para aguardar o Docker)
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<PropostaDbContext>();
-    try
+    var services = scope.ServiceProvider;
+    var dbContext = services.GetRequiredService<PropostaDbContext>();
+    var logger = services.GetRequiredService<ILogger<Program>>();
+
+    int maxRetries = 5;
+    int delay = 3000; // 3 segundos entre tentativas
+
+    for (int i = 1; i <= maxRetries; i++)
     {
-        Console.WriteLine("Aplicando migrations Proposta...");
-        // Isso garante que as tabelas e o Seed Data sejam criados no banco do Docker
-        dbContext.Database.Migrate();
-        Console.WriteLine("Migrations Proposta aplicadas com sucesso!");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Erro ao aplicar migrations: {ex.Message}");
-        throw;
+        try
+        {
+            logger.LogInformation("Tentativa {Tentativa}/{Max} de aplicar migrations (Proposta)...", i, maxRetries);
+            dbContext.Database.Migrate();
+            logger.LogInformation("Migrations de Proposta aplicadas com sucesso!");
+            break;
+        }
+        catch (Exception ex)
+        {
+            if (i == maxRetries)
+            {
+                logger.LogCritical(ex, "Erro fatal: Banco de dados não disponível após {Max} tentativas.", maxRetries);
+                throw;
+            }
+
+            logger.LogWarning("Banco ainda não aceita conexões. Nova tentativa em {Delay}ms...", delay);
+            Thread.Sleep(delay);
+        }
     }
 }
 
-// COMENTADO para evitar problemas de certificado local no Windows/Docker
-// app.UseHttpsRedirection(); 
-
 app.UseAuthorization();
 app.MapControllers();
-
-// Health check endpoint
 app.MapGet("/health", () => Results.Ok("Healthy"));
 
 app.Run();

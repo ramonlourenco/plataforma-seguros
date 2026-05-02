@@ -1,4 +1,5 @@
 version: '3.9'
+
 services:
   postgres:
     image: postgres:16
@@ -20,11 +21,13 @@ services:
       dockerfile: ./Proposta.Api/Dockerfile
       args:
         DOTNET_RESTORE_NO_CACHE: "true"
+    container_name: plataforma-seguros-proposta
     ports:
       - "5001:80"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=db_plataforma_seguros;Username=postgres;Password=postgres
     depends_on:
       - postgres
     networks:
@@ -36,12 +39,14 @@ services:
       dockerfile: ./Contratacao.Api/Dockerfile
       args:
         DOTNET_RESTORE_NO_CACHE: "true"
+    container_name: plataforma-seguros-contratacao
     ports:
       - "5003:80"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - PropostaService__BaseUrl=http://proposta-service:80
       - ASPNETCORE_URLS=http://+:80
+      - PropostaService__BaseUrl=http://proposta-service:80
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=db_plataforma_seguros;Username=postgres;Password=postgres
     depends_on:
       - proposta-service
     networks:
